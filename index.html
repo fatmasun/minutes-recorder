@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="ms">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Rekod Minit Mesyuarat & Perhimpunan</title>
+
+  <!-- jsPDF CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" integrity="" crossorigin="anonymous"></script>
+
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial; padding: 18px; max-width:900px; margin:0 auto; }
+    h1 { text-align:center; }
+    form { display:grid; gap:10px; margin-top:10px; }
+    label { font-weight:600; }
+    input, textarea, select { padding:8px; font-size:1rem; width:100%; box-sizing:border-box; }
+    textarea { min-height:140px; resize:vertical; }
+    .row { display:flex; gap:10px; }
+    .row > * { flex:1; }
+    button { padding:10px 14px; font-size:1rem; border-radius:8px; border:0; cursor:pointer; }
+    button.primary { background:#2563eb; color:white; }
+    button.ghost { background:#eee; }
+    .modal-backdrop { position:fixed; inset:0; background:rgba(0,0,0,0.4); display:flex; align-items:center; justify-content:center; }
+    .modal { background:white; padding:18px; border-radius:10px; width:90%; max-width:520px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+    .meta { font-size:0.9rem; color:#444; margin-bottom:8px; }
+    .actions { display:flex; gap:10px; margin-top:12px; }
+    .small { font-size:0.9rem; color:#666; margin-top:8px; }
+  </style>
+</head>
+<body>
+  <h1>Rekod Minit Mesyuarat / Perhimpunan</h1>
+
+  <form id="minutesForm">
+    <div class="row">
+      <div>
+        <label for="date">Tarikh</label>
+        <input id="date" name="date" type="date" required />
+      </div>
+      <div>
+        <label for="time">Masa</label>
+        <input id="time" name="time" type="time" required />
+      </div>
+    </div>
+
+    <label for="speaker">Petugas (yang berucap)</label>
+    <input id="speaker" name="speaker" type="text" placeholder="Nama petugas / penceramah" required />
+
+    <label for="title">Nama / Tajuk (ringkasan)</label>
+    <input id="title" name="title" type="text" placeholder="Contoh: Perkembangan Projek X" />
+
+    <label for="recorder">Nama Pencatat</label>
+    <input id="recorder" name="recorder" type="text" placeholder="Nama yang mencatat" required />
+
+    <label for="notes">Catatan</label>
+    <textarea id="notes" name="notes" placeholder="Tuliskan keputusan, tindakan, nota penting..." required></textarea>
+
+    <div style="display:flex; gap:10px; align-items:center;">
+      <button class="primary" type="submit">Simpan & Kongsi</button>
+      <button class="ghost" id="clearBtn" type="button">Kosongkan</button>
+    </div>
+    <div class="small">Data akan dihantar ke Google Sheets anda melalui Apps Script.</div>
+  </form>
+
+  <!-- Modal (tersembunyi secara default) -->
+  <div id="resultModal" style="display:none;" class="modal-backdrop" role="dialog" aria-modal="true">
+    <div class="modal">
+      <h3>Catatan Disimpan</h3>
+      <p class="meta" id="savedMeta">—</p>
+
+      <div>
+        <label for="shareMsg">Teks Kongsi (boleh edit sebelum kongsi)</label>
+        <textarea id="shareMsg" style="min-height:100px"></textarea>
+      </div>
+
+      <div class="actions">
+        <a id="whatsappLink" href="#" target="_blank" rel="noopener">
+          <button type="button">Kongsi ke WhatsApp</button>
+        </a>
+        <button id="pdfBtn" type="button">Jana PDF</button>
+        <button id="closeModal" class="ghost" type="button">Tutup</button>
+      </div>
+
+      <div class="small">Butang "Kongsi ke WhatsApp" akan buka WhatsApp Web / Aplikasi dengan teks yang terisi.</div>
+    </div>
+  </div>
+
+<script>
+  // ---- CONFIG: Ganti URL di bawah dengan URL Web App Google Apps Script anda ----
+  const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzR6C5f2siojhEdy1uflre29IhWo3TditZbIOoKWFl-Ozqwk_wGzTdKnCmJMo823Gez/exec";
+  // ----------------------------------------------------------------------------
+
+  const form = document.getElementById('minutesForm');
+  const clearBtn = document.getElementById('clearBtn');
+  const modal = document.getElementById('resultModal');
+  const savedMeta = document.getElementById('savedMeta');
+  const shareMsg = document.getElementById('shareMsg');
+  const whatsappLink = document.getElementById('whatsappLink');
+  const pdfBtn = document.getElementById('pdfBtn');
+  const closeModal = document.getElementById('closeModal');
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+
+    const data = {
+      date: form.date.value,
+      time: form.time.value,
+      speaker: form.speaker.value.trim(),
+      title: form.title.value.trim(),
+      recorder: form.recorder.value.trim(),
+      notes: form.notes.value.trim()
+    };
+
+    // Simple validation
+    if (!data.speaker || !data.recorder || !data.notes || !data.date || !data.time) {
+      alert('Sila lengkapkan semua medan wajib.');
+      return;
+    }
+
+    // Show saving indicator
+    const submitBtn = ev.submitter || form.querySelector('button[type="submit"]');
+    const prevText = submitBtn.innerText;
+    submitBtn.innerText = 'Menyimpan...';
+    submitBtn.disabled = true;
+
+    try {
+      const resp = await fetch(WEB_APP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+      // Try to parse JSON response
+      let result = {};
+      try { result = await resp.json(); } catch (e) { result = { status: 'ok' }; }
+
+      // Tunjukkan modal dengan pilihan kongsi/pdf
+      openResultModal(data, result);
+      // reset form optionally
+      form.reset();
+
+    } catch (err) {
+      console.error(err);
+      alert('Ralat menyimpan data. Sila periksa WEB_APP_URL dan konfigurasi Google Apps Script.');
+    } finally {
+      submitBtn.innerText = prevText;
+      submitBtn.disabled = false;
+    }
+  });
+
+  clearBtn.addEventListener('click', () => form.reset());
+
+  function openResultModal(data, result) {
+    const now = new Date();
+    savedMeta.innerText = `${data.date} ${data.time} — Petugas: ${data.speaker} — Pencatat: ${data.recorder}`;
+    // Default share message
+    const shareText = `Catatan Mesyuarat / Perhimpunan\nTarikh: ${data.date}\nMasa: ${data.time}\nPetugas: ${data.speaker}\nPencatat: ${data.recorder}\nTajuk: ${data.title || '-'}\n\nCatatan:\n${data.notes}`;
+    shareMsg.value = shareText;
+
+    // Prepare WhatsApp link (encode text)
+    const encoded = encodeURIComponent(shareText);
+    // For group, user may paste group number or use wa.me with phone number; we open generic send page with text only:
+    whatsappLink.href = `https://api.whatsapp.com/send?text=${encoded}`;
+
+    modal.style.display = 'flex';
+  }
+
+  closeModal.addEventListener('click', () => modal.style.display = 'none');
+
+  // Generate PDF via jsPDF
+  pdfBtn.addEventListener('click', async () => {
+    // read data from modal fields
+    const content = shareMsg.value;
+    // use jsPDF
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const left = 40;
+    let y = 40;
+    const lineHeight = 14;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const maxLineWidth = pageWidth - left*2;
+    doc.setFontSize(12);
+    // split text into lines
+    const lines = doc.splitTextToSize(content, maxLineWidth);
+    doc.text(lines, left, y);
+    // filename with date-time
+    const fname = `catatan_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.pdf`;
+    doc.save(fname);
+  });
+
+  // Close modal when clicking outside the modal content
+  window.addEventListener('click', (e) => {
+    if (e.target === modal) modal.style.display = 'none';
+  });
+
+</script>
+</body>
+</html>

@@ -5,7 +5,7 @@ function doPost(e) {
     var data = JSON.parse(e.postData.contents);
 
     // Gantikan dengan ID spreadsheet anda
-    var SPREADSHEET_ID = "REPLACE_WITH_YOUR_SPREADSHEET_ID";
+    var SPREADSHEET_ID = "1nfcd9HfYkLOWCzYj_hTihhramz2UmbPEuWkGCAlNcAQ";
     var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName("Sheet1");
     if (!sheet) {
       // Jika tiada, buat sheet baru
